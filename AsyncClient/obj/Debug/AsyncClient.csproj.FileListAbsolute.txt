@@ -1,0 +1,8 @@
+C:\Users\taekong\documents\visual studio 2015\Projects\AsyncChat\AsyncClient\bin\Debug\AsyncClient.exe
+C:\Users\taekong\documents\visual studio 2015\Projects\AsyncChat\AsyncClient\bin\Debug\AsyncClient.pdb
+C:\Users\taekong\documents\visual studio 2015\Projects\AsyncChat\AsyncClient\obj\Debug\AsyncClient.exe
+C:\Users\taekong\documents\visual studio 2015\Projects\AsyncChat\AsyncClient\obj\Debug\AsyncClient.pdb
+C:\Users\taekong\documents\visual studio 2015\Projects\AsyncChat\AsyncClient\obj\Debug\AsyncClient.csprojResolveAssemblyReference.cache
+C:\Users\taekong\documents\visual studio 2015\Projects\AsyncChat\AsyncClient\bin\Debug\LunkerProtocol.dll
+C:\Users\taekong\documents\visual studio 2015\Projects\AsyncChat\AsyncClient\bin\Debug\websocket-sharp.dll
+C:\Users\taekong\documents\visual studio 2015\Projects\AsyncChat\AsyncClient\bin\Debug\websocket-sharp.xml
