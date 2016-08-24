@@ -7,31 +7,35 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using LunkerLibrary.common.protocol;
 using WebSocketSharp;
-using static AsyncClient.CommonHelper;
+using AsyncChat;
+using static AsyncChat.CommonHelper;
 
 namespace AsyncClient
 {
     class Client
     {
-        private Socket currentSocket = null;
-        private Socket newSocket = null;
+        private Socket currentSocket;
+        private Socket newSocket;
         private Socket loginSocket = null;
         private Socket chatSocket = null;
+        
+        private int line;
         private int viewCount = 27;
-        private int recvSize = 200;
+        private int recvBufferSize = 200;
 
+        private bool debug = true;
+
+        public List<StringBuilder> display = null;
         public WebSocket webSocket = null;
         public UserInfo userInfo;
         public Cookie cookie;
         public ServerInfo serverInfo;
         public ChattingRoom room;
         public int roomNo = 0;
-        public List<StringBuilder> display = null;
-        public int line;
+        
         public ServerType serverType;
         public RunType runType;
         public RunState runState;
-        public bool isConnecting;
         public bool isWebSocket = false;
 
         public CommonHeader responseHeader;
@@ -40,93 +44,178 @@ namespace AsyncClient
 
         public Client()
         {
-            runType = RunType.Start;
-            runState = RunState.Idle;
+            InitializeClient();
             display = new List<StringBuilder>();
             line = 0;
-            isConnecting = false;
+        }
+
+        public void InitializeClient()
+        {
+            currentSocket = null;
+            newSocket = null;
+
+            if (chatSocket != null)
+            {
+                if (chatSocket.Connected)
+                    chatSocket.Close();
+
+                chatSocket = null;
+            }
+
+            if (loginSocket != null)
+            {
+                if (loginSocket.Connected)
+                    loginSocket.Close();
+
+                loginSocket = null;
+            }
+
+            if (webSocket != null)
+            {
+                if (webSocket.ReadyState == WebSocketState.Open)
+                    webSocket.Close();
+
+                webSocket = null;
+            }
+
+            runType = RunType.Start;
+            runState = RunState.Idle;
+        }
+
+        public void ChangeCurrentSocket(ServerType server)
+        {
+            currentSocket = null;
+            if (server == ServerType.Login)
+                currentSocket = loginSocket;
+            else if (server == ServerType.Chat)
+                currentSocket = chatSocket;
+        }
+
+        public void BackToLoginServer()
+        {
+            currentSocket = null;
+            newSocket = null;
+            if (!isWebSocket)
+            {
+                if (chatSocket != null)
+                {
+                    if (chatSocket.Connected)
+                        chatSocket.Close();
+                    chatSocket = null;
+                }
+            }
+            else
+            {
+                if (webSocket != null)
+                {
+                    if (webSocket.IsAlive)
+                        webSocket.Close();
+                    webSocket = null;
+                    isWebSocket = false;
+                }
+            }
+
+            if (loginSocket != null)
+            {
+                if (loginSocket.Connected)
+                {
+                    currentSocket = loginSocket;
+                    runType = RunType.Login;
+                }
+                else
+                {
+                    loginSocket = null;
+                    runType = RunType.Start;
+                }
+            }
+            else runType = RunType.Start;
+
+            
+        }
+
+        private void StartWebClient(string url)
+        {
+            webSocket = new WebSocket(url);
+            webSocket.WaitTime = TimeSpan.MaxValue;
+            webSocket.ConnectAsync();
+            
+            webSocket.OnOpen += (sender, e) =>
+            {
+                ConnectionSetupRequest();
+            };
+
+            webSocket.OnMessage += (sender, e) =>
+            {
+                ResponseHandler rh = new ResponseHandler(this);
+                rh.HandleResponse(e.RawData);
+            };
+            
+            webSocket.OnClose += (sender, e) =>
+            {
+                SendDisplay("WebSocket Closing", ChatType.System);
+                BackToLoginServer();
+                runState = RunState.Idle;
+            };
+            
+            webSocket.OnError += (sender, e) =>
+            {
+                SendDisplay("WebSocket Error", ChatType.System);
+                isWebSocket = false;
+                Console.ReadKey();
+                RedirectSocket();
+                runState = RunState.Idle;
+            };
         }
 
         public void Connect(string address, int port, ServerType server)
         {
-            try
+            serverType = server;
+            if (port == 80)
             {
-                serverType = server;
-                if (port == 80)
-                {
-                    isWebSocket = true;
-                    string url = "ws://" + address + ":" + port.ToString() + "/";
-                    StartWebClient(url);
-                }
-                else
-                {
-                    isWebSocket = false;
-                    IPEndPoint ipEndPoint = new IPEndPoint(IPAddress.Parse(address), port);
-                    SocketAsyncEventArgs args = new SocketAsyncEventArgs();
-                    args.RemoteEndPoint = ipEndPoint;
-                    args.Completed += new EventHandler<SocketAsyncEventArgs>(Connect_Completed);
-
-                    newSocket = loginSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                    newSocket.ConnectAsync(args);
-                }
+                isWebSocket = true;
+                string url = "ws://" + address + ":" + port.ToString() + "/";
+                StartWebClient(url);
             }
-            catch (Exception exc)
+            else
             {
-                SendDisplay("Connect Error"+ exc.Message, ChatType.System);
-                Console.ReadKey();
-                Environment.Exit(0);
+                isWebSocket = false;
+                IPEndPoint ipEndPoint = new IPEndPoint(IPAddress.Parse(address), port);
+                SocketAsyncEventArgs args = new SocketAsyncEventArgs();
+                args.RemoteEndPoint = ipEndPoint;
+                args.Completed += new EventHandler<SocketAsyncEventArgs>(Connect_Completed);
+
+                newSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                newSocket.ConnectAsync(args);
             }
         }
-
-
-        private void StartWebClient(string url)
-        {
-            try
-            {
-                webSocket = new WebSocket(url);
-
-                webSocket.ConnectAsync();
-
-                webSocket.OnOpen += (sender, e) =>
-                {
-                    ConnectionSetup();
-                };
-
-                webSocket.OnMessage += (sender, e) =>
-                {
-                    ResponseHandler rh = new ResponseHandler(this);
-                    rh.HandleResponse(e.RawData);
-                };
-
-                webSocket.OnClose += (sender, e) =>
-                {
-                    isWebSocket = false;
-                };
-            }
-            catch (Exception exc)
-            {
-                SendDisplay("WebSocket Error" + exc.Message, ChatType.System);
-                Console.ReadKey();
-                Environment.Exit(0);
-            }
-        }
-        
 
         private void Send(byte[] sendData)
         {
             try
             {
-                SocketAsyncEventArgs sendArgs = new SocketAsyncEventArgs();
-                sendArgs.SetBuffer(sendData, 0, sendData.Length);
-                sendArgs.UserToken = currentSocket;
-                sendArgs.Completed += new EventHandler<SocketAsyncEventArgs>(Send_Completed);
-                currentSocket.SendAsync(sendArgs);
+                if (currentSocket != null)
+                {
+                    if (currentSocket.Connected)
+                    {
+                        SocketAsyncEventArgs sendArgs = new SocketAsyncEventArgs();
+                        sendArgs.SetBuffer(sendData, 0, sendData.Length);
+                        sendArgs.UserToken = currentSocket;
+                        sendArgs.Completed += new EventHandler<SocketAsyncEventArgs>(Send_Completed);
+                        currentSocket.SendAsync(sendArgs);
+                    }
+                    else SendDisplay("Send Socket Not Connected", ChatType.System);    
+                }
+                else
+                {
+                    SendDisplay("Send Fail", ChatType.System);
+                }
             }
             catch (Exception exc)
             {
                 SendDisplay("Send Error" + exc.Message, ChatType.System);
                 Console.ReadKey();
-                Environment.Exit(0);
+                RedirectSocket();
+                runState = RunState.Idle;
             }
         }
 
@@ -134,117 +223,118 @@ namespace AsyncClient
         {
             try
             {
-                SocketAsyncEventArgs receiveArgs = new SocketAsyncEventArgs();
-                byte[] recvData = new byte[recvSize];
-                receiveArgs.UserToken = currentSocket;
-                receiveArgs.SetBuffer(recvData, 0, recvData.Length);
-                receiveArgs.Completed += new EventHandler<SocketAsyncEventArgs>(Recieve_Completed);
-                currentSocket.ReceiveAsync(receiveArgs);
+                if (currentSocket != null)
+                {
+                    if (currentSocket.Connected)
+                    {
+                        SocketAsyncEventArgs receiveArgs = new SocketAsyncEventArgs();
+                        byte[] recvData = new byte[recvBufferSize];
+                        receiveArgs.UserToken = currentSocket;
+                        receiveArgs.SetBuffer(recvData, 0, recvData.Length);
+                        receiveArgs.Completed += new EventHandler<SocketAsyncEventArgs>(Recieve_Completed);
+                        currentSocket.ReceiveAsync(receiveArgs);
+                    }
+                    else SendDisplay("Receive Socket Not Connected", ChatType.System);
+                }
+                else
+                {
+                    SendDisplay("Receive Fail", ChatType.System);
+                    SendDisplay("Press Any Key...", ChatType.System);
+                }
             }
             catch (Exception exc)
             {
                 SendDisplay("Receive Error" + exc.Message, ChatType.System);
                 Console.ReadKey();
-                Environment.Exit(0);
+                RedirectSocket();
+                runState = RunState.Idle;
             }
         }
 
         private void Connect_Completed(object sender, SocketAsyncEventArgs e)
         {
-            try
-            {
-                currentSocket = null;
+            currentSocket = null;
 
+            if (serverType == ServerType.Login)
+            {
+                loginSocket = (Socket)sender;
+                currentSocket = loginSocket;
+            }
+            else if (serverType == ServerType.Chat)
+            {
+                chatSocket = (Socket)sender;
+                currentSocket = chatSocket;
+            }
+
+            if (currentSocket.Connected)
+            {
                 if (serverType == ServerType.Login)
                 {
-                    loginSocket = (Socket)sender;
-                    currentSocket = loginSocket;
+                    SendDisplay("Connected to Login Server!", ChatType.System);
+                    runType = RunType.Login;
+                    runState = RunState.Idle;
+                    Receive();
                 }
                 else if (serverType == ServerType.Chat)
                 {
-                    chatSocket = (Socket)sender;
-                    currentSocket = chatSocket;
-                }
-
-                if (currentSocket.Connected)
-                {
-                    if (serverType == ServerType.Login)
-                    {
-                        SendDisplay("Connected to Login Server!", ChatType.System);
-                        runType = RunType.Login;
-                        runState = RunState.Idle;
-                        Receive();
-                    }
-                    else if (serverType == ServerType.Chat)
-                    {
-                        ConnectionSetup();
-                        Receive();
-                    }
-                }
-                else
-                {
-                    currentSocket = null;
-                    SendDisplay("Connection Failed!", ChatType.System);
-                    SendDisplay("Press Enter Key to Retry... (/exit)", ChatType.System);
-                    string command = Console.ReadLine();
-                    if (command == "/exit")
-                    {
-                        SendDisplay("Exit Application... Bye", ChatType.System);
-                        Console.ReadKey();
-                        Environment.Exit(0);
-                    }
-                    isConnecting = false;
-                    runState = RunState.Idle;
+                    ConnectionSetupRequest();
+                    Receive();
                 }
             }
-            catch (Exception exc)
+            else
             {
-                SendDisplay("Connect_Completed Error" + exc.Message, ChatType.System);
-                Console.ReadKey();
-                Environment.Exit(0);
+                SendDisplay("Connection Failed!", ChatType.System);
+                SendDisplay("Enter Anything to Retry... or Enter \"/exit\" to Close Application", ChatType.System);
+                string command = Console.ReadLine();
+                if (command == "/exit")
+                {
+                    SendDisplay("Closing Application...", ChatType.System);
+                    SendDisplay("Press Any Key...", ChatType.System);
+                    Console.ReadKey();
+                    Environment.Exit(0);
+                }
+                InitializeClient();
             }
         }
 
         private void Send_Completed(object sender, SocketAsyncEventArgs e)
         {
             Socket client = (Socket)sender;
-            //SendDisplay(string.Format("Data Sent"), ChatType.Debug);
+            DebugDisplay("Data Sent");
         }
 
         private void Recieve_Completed(object sender, SocketAsyncEventArgs e)
         {
-            try
-            {
-                Socket client = (Socket)sender;
+            Socket client = (Socket)sender;
 
-                if (client.Connected && e.BytesTransferred > 0)
+            if (client.Connected)
+            {
+                if (e.BytesTransferred > 0)
                 {
-                    //SendDisplay("Data Received", ChatType.Debug);
+                    DebugDisplay("Data Received");
                     byte[] szData = new byte[e.BytesTransferred];
                     Array.Copy(e.Buffer, szData, szData.Length);
-                    lock(szData)
+                    lock (szData)
                     {
                         ResponseHandler rh = new ResponseHandler(this);
                         rh.HandleResponse(szData);
                     }
-                    byte[] recvData = new byte[recvSize];
-                    e.SetBuffer(recvData, 0, recvSize);
-
-                    client.ReceiveAsync(e);
                 }
-                else
+                else if (e.BytesTransferred < 0)
                 {
-                    SendDisplay("Recieve Failed!", ChatType.System);
-                    CheckSocketConnection();
+                    SendDisplay("Invalid Bytes Transferred (less than 0)...", ChatType.System);
                 }
-            }
-            catch (Exception exc)
-            {
-                SendDisplay("Receive_Completed Error " + exc, ChatType.System);
-                Console.ReadKey();
-                Environment.Exit(0);
-            }
 
+                byte[] recvData = new byte[recvBufferSize];
+                e.SetBuffer(recvData, 0, recvBufferSize);
+                client.ReceiveAsync(e);
+            }
+            else
+            {
+                SendDisplay("Recieve Failed!", ChatType.System);
+                RedirectSocket();
+                runState = RunState.Idle;
+            }
         }
 
         public void ConnectionPassing()
@@ -252,25 +342,14 @@ namespace AsyncClient
             Connect(serverInfo.GetPureIp(), serverInfo.Port, ServerType.Chat);
         }
 
-        public void ConnectionSetup()
+        public void ConnectionSetupRequest()
         {
             CommonHeader header = new CommonHeader(MessageType.ConnectionSetup, MessageState.Request, 0, cookie, userInfo);
             SendStructAsBytes<CommonHeader>(header);
         }
 
-        public void Signup(string id, string pwd, bool isDummy)
+        public void SignupRequest(string id, string pwd, bool isDummy)
         {
-            /*
-            char[] idtmp = new char[18];
-            char[] pwdtmp = new char[18];
-            Array.Copy(id.ToCharArray(), idtmp, id.ToCharArray().Length);
-            Array.Copy(pwd.ToCharArray(), pwdtmp, pwd.ToCharArray().Length);
-
-
-            UserInfo userInfo = new UserInfo(id, pwd, isDummy);
-            UserInfo userInfo = new UserInfo(idtmp, pwdtmp, isDummy);
-            */
-
             UserInfo userInfo = new UserInfo(id, pwd, isDummy);
             Cookie cookie = new Cookie();
             CommonHeader header = new CommonHeader(MessageType.Signup, MessageState.Request, 0, cookie, userInfo);
@@ -278,7 +357,7 @@ namespace AsyncClient
             SendStructAsBytes<CommonHeader>(header);
         }
 
-        public void Signin(string id, string pwd, bool isDummy)
+        public void SigninRequest(string id, string pwd, bool isDummy)
         {
             UserInfo userInfo = new UserInfo(id, pwd, isDummy);
             Cookie cookie = new Cookie();
@@ -287,7 +366,7 @@ namespace AsyncClient
             SendStructAsBytes<CommonHeader>(header);
         }
         
-        public void Modify(string id, string pwd, string nPwd, bool isDummy)
+        public void ModifyRequest(string id, string pwd, string nPwd, bool isDummy)
         {
             UserInfo userInfo = new UserInfo(id, pwd, isDummy);
             Cookie cookie = new Cookie();
@@ -295,11 +374,13 @@ namespace AsyncClient
             CommonHeader header = new CommonHeader(MessageType.Modify, MessageState.Request, bodyLength, cookie, userInfo);
             CLModifyRequestBody modifyReqBody = new CLModifyRequestBody(userInfo, nPwd);
 
-            SendStructAsBytes<CommonHeader>(header);
-            SendStructAsBytes<CLModifyRequestBody>(modifyReqBody);
+            SendStructAsPacket(header, modifyReqBody);
+
+            //SendStructAsBytes<CommonHeader>(header);
+            //SendStructAsBytes<CLModifyRequestBody>(modifyReqBody);
         }
 
-        public void Delete(string id, string pwd, bool isDummy)
+        public void DeleteRequest(string id, string pwd, bool isDummy)
         {
             UserInfo userInfo = new UserInfo(id, pwd, isDummy);
             Cookie cookie = new Cookie();
@@ -307,43 +388,48 @@ namespace AsyncClient
             SendStructAsBytes<CommonHeader>(header);
         }
 
-        public void Join(int roomNo)
+        public void JoinRequest(int roomNo)
         {
             int bodyLength = Marshal.SizeOf(typeof(CCJoinRequestBody));
             CommonHeader header = new CommonHeader(MessageType.JoinRoom, MessageState.Request, bodyLength, cookie, userInfo);
-            SendStructAsBytes<CommonHeader>(header);
 
             room = new ChattingRoom(roomNo);
             CCJoinRequestBody joinReqBody = new CCJoinRequestBody(room);
-            SendStructAsBytes<CCJoinRequestBody>(joinReqBody);
+
+            SendStructAsPacket(header, joinReqBody);
+
+            //SendStructAsBytes<CommonHeader>(header);
+            //SendStructAsBytes<CCJoinRequestBody>(joinReqBody);
         }
 
-        public void Create()
+        public void CreateRequest()
         {
             CommonHeader header = new CommonHeader(MessageType.CreateRoom, MessageState.Request, 0, cookie, userInfo);
             SendStructAsBytes<CommonHeader>(header);
         }
 
-        public void List()
+        public void ListRequest()
         {
             CommonHeader header = new CommonHeader(MessageType.ListRoom, MessageState.Request, 0, cookie, userInfo);
             SendStructAsBytes<CommonHeader>(header);
         }
 
-        public void Logout()
+        public void LogoutRequest()
         {
             CommonHeader header = new CommonHeader(MessageType.Logout, MessageState.Request, 0, cookie, userInfo);
             SendStructAsBytes<CommonHeader>(header);
         }
 
-        public void Leave()
+        public void LeaveRequest()
         {
             int bodyLength = Marshal.SizeOf(typeof(CCLeaveRequestBody));
             CommonHeader header = new CommonHeader(MessageType.LeaveRoom, MessageState.Request, bodyLength, cookie, userInfo);
-            SendStructAsBytes<CommonHeader>(header);
             CCLeaveRequestBody leaveReqbody = new CCLeaveRequestBody(room);
-            SendStructAsBytes<CCLeaveRequestBody>(leaveReqbody);
-            room.RoomNo = 0;
+
+            SendStructAsPacket(header, leaveReqbody);
+
+            //SendStructAsBytes<CommonHeader>(header);
+            //SendStructAsBytes<CCLeaveRequestBody>(leaveReqbody);
         }
 
         public void Heartbeat()
@@ -358,118 +444,123 @@ namespace AsyncClient
             {
                 sData = Console.ReadLine();
 
+                byte[] sendBody = Encoding.UTF8.GetBytes(sData.Trim());
+                CommonHeader header = new CommonHeader(MessageType.Chatting, MessageState.Request, sendBody.Length, new Cookie(), userInfo);
+                SendStructAsBytes<CommonHeader>(header);
+
+                byte[] packet = new byte[Marshal.SizeOf(typeof(CommonHeader)) + Marshal.SizeOf(typeof(CCLeaveRequestBody))];
+                Array.Copy(StructToBytes(header), 0, packet, 0, Marshal.SizeOf(typeof(CommonHeader)));
+                
+
                 if (sData.CompareTo("/exit") == 0)
                 {
                     break;
                 }
                 else
                 {
-                    if (currentSocket != null)
+                    if (!isWebSocket)
                     {
-                        if (!currentSocket.Connected)
+                        if (currentSocket != null)
                         {
-                            CheckSocketConnection();
-                            SendDisplay("Chat Connection Failed!", ChatType.System);
-                            SendDisplay("Press Any Key...", ChatType.System);
-                            Console.ReadKey();
-                        }
-                        else
-                        {
-                            byte[] sendBody = Encoding.UTF8.GetBytes(sData.Trim());
-                            CommonHeader header = new CommonHeader(MessageType.Chatting, MessageState.Request, sendBody.Length, new Cookie(), userInfo);
-                            SendStructAsBytes<CommonHeader>(header);
-
-                            try
+                            if (!currentSocket.Connected)
                             {
-                                if (isWebSocket)
-                                    webSocket.Send(sendBody);
-                                else
-                                    Send(sendBody);
-                            }
-                            catch (Exception e)
-                            {
-                                SendDisplay("Chatting Send Error" + e.Message, ChatType.System);
+                                SendDisplay("Chat Connection Failed!", ChatType.System);
+                                SendDisplay("Press Any Key...", ChatType.System);
                                 Console.ReadKey();
-                                Environment.Exit(0);
+                                RedirectSocket();
+                                runState = RunState.Idle;
                             }
-
-                        //SendDisplay(sData, ChatType.Send);
+                            else
+                            {
+                                Array.Copy(sendBody, 0, packet, Marshal.SizeOf(typeof(CommonHeader)), sendBody.Length);
+                                Send(packet);
+                                DebugDisplay(sData);
+                            }
                         }
+                        else break;
                     }
                     else
                     {
-                        break;
+                        if (webSocket != null)
+                        {
+                            if (webSocket.ReadyState != WebSocketState.Open)
+                            {
+                                SendDisplay("Chat Connection Failed!", ChatType.System);
+                                SendDisplay("Press Any Key...", ChatType.System);
+                                Console.ReadKey();
+                                isWebSocket = false;
+                                ReconnectLoginServer();
+                                runState = RunState.Idle;
+                                break;
+                            }
+                            else
+                            {
+                                Array.Copy(sendBody, 0, packet, Marshal.SizeOf(typeof(CommonHeader)), sendBody.Length);
+                                webSocket.Send(packet);
+                                DebugDisplay(sData);
+                            }
+                        }
+                        else
+                        {
+                            isWebSocket = false;
+                            break;
+                        }
                     }
                 }
             }
         }
 
-        public void BackToLoginSocket()
+        public void ReconnectLoginServer()
         {
-            if (chatSocket != null)
+            if (loginSocket != null)
             {
-                if (loginSocket != null)
+                if (loginSocket.Connected)
                 {
-                    currentSocket = null;
                     currentSocket = loginSocket;
-                    chatSocket.Close();
-                    chatSocket = null;
                     runType = RunType.Login;
                 }
-                else runType = RunType.Start;
+                else
+                {
+                    loginSocket = null;
+                    runType = RunType.Start;
+                }
             }
-            else runType = RunType.Login;
+            else runType = RunType.Start;
         }
 
-        public void CheckSocketConnection()
+        public void RedirectSocket()
         {
-            lock (currentSocket)
+            currentSocket = null;
+
+            if (!isWebSocket)
             {
-                currentSocket = null;
                 if (chatSocket != null)
                 {
                     if (chatSocket.Connected)
                     {
                         currentSocket = chatSocket;
-                        runType = RunType.Lobby;
+                        //runType = RunType.Lobby;
                     }
                     else
                     {
                         chatSocket = null;
-                        if (loginSocket != null)
-                        {
-                            if (loginSocket.Connected)
-                            {
-                                currentSocket = loginSocket;
-                                runType = RunType.Login;
-                            }
-                            else
-                            {
-                                loginSocket = null;
-                                runType = RunType.Start;
-                                isConnecting = false;
-                            }
-                        }
+                        ReconnectLoginServer();
                     }
                 }
-                else
+                else ReconnectLoginServer();
+            }
+            else
+            {
+                if (webSocket != null)
                 {
-                    if (loginSocket != null)
+                    if (webSocket.ReadyState != WebSocketState.Open)
                     {
-                        if (loginSocket.Connected)
-                        {
-                            currentSocket = loginSocket;
-                            runType = RunType.Login;
-                        }
-                        else
-                        {
-                            loginSocket = null;
-                            runType = RunType.Start;
-                            isConnecting = false;
-                        }
+                        webSocket = null;
+                        ReconnectLoginServer();
                     }
+                    //else runType = RunType.Lobby;
                 }
-                runState = RunState.Idle;
+                else ReconnectLoginServer();
             }
         }
 
@@ -524,6 +615,18 @@ namespace AsyncClient
             Console.Write("\nInput Command: ");
         }
 
+        private void SendStructAsPacket<T>(CommonHeader header, T body)
+        {
+            byte[] packet = new byte[Marshal.SizeOf(typeof(CommonHeader)) + Marshal.SizeOf(typeof(T))];
+            Array.Copy(StructToBytes(header), 0, packet, 0, Marshal.SizeOf(typeof(CommonHeader)));
+            Array.Copy(StructToBytes(body), 0, packet, Marshal.SizeOf(typeof(CommonHeader)), Marshal.SizeOf(typeof(T)));
+
+            if (isWebSocket)
+                webSocket.Send(packet);
+            else
+                Send(packet);
+        }
+
         private void SendStructAsBytes<T>(object structure)
         {
             byte[] sendBytes = new byte[Marshal.SizeOf(typeof(T))];
@@ -539,38 +642,47 @@ namespace AsyncClient
             {
                 SendDisplay("Struct Send Error" + e.Message, ChatType.System);
                 Console.ReadKey();
-                Environment.Exit(0);
+                RedirectSocket();
+                runState = RunState.Idle;
+                //Environment.Exit(0);
             }
 
             if (typeof(T) == typeof(CommonHeader))
             {
                 CommonHeader header = (CommonHeader)structure;
-                //SendDisplay(DebugHeader(header), ChatType.Send);
+                DebugDisplay("[Sending] " + DebugHeader(header));
             }
             else
             {
-                //SendDisplay(string.Format("{0}", typeof(T).ToString()), ChatType.Send);
+                DebugDisplay(typeof(T).ToString());
             }
         }
 
         public string DebugHeader(CommonHeader header)
         {
-            string s = string.Format("Type: {0}, State: {1}, BodyLength: {2}, Cookie: {3}, Id: {4}, Pwd: {5}, isDummy: {6}",
+            string s = string.Format("[Type: {0}] [State: {1}] [BodyLength: {2}] [Cookie: {3}] [Id, Pwd: {4}, {5}] [isDummy: {6}]",
                     header.Type.ToString(), header.State.ToString(), header.BodyLength, header.Cookie.Value,
                     header.UserInfo.GetPureId(), header.UserInfo.GetPurePwd(), header.UserInfo.IsDummy);
             return s;
         }
 
-        public bool IsConnected()
+        public void DebugDisplay(string s)
         {
-            if (currentSocket != null)
+            if (debug)
+                SendDisplay(s, ChatType.Debug);
+        }
+
+        public void ClearDisplay()
+        {
+            if (!debug)
             {
-                if (!currentSocket.Connected)
-                    return false;
-                else
-                    return true;
+                lock (display)
+                {
+                    if (display != null) display.Clear();
+                    else display = new List<StringBuilder>();
+                }
+                line = 0;
             }
-            else return false;
         }
 
         public bool IsLoginConnected()
@@ -587,14 +699,28 @@ namespace AsyncClient
 
         public bool IsChatConnected()
         {
-            if (chatSocket != null)
+            if (!isWebSocket)
             {
-                if (!chatSocket.Connected)
-                    return false;
-                else
-                    return true;
+                if (chatSocket != null)
+                {
+                    if (!chatSocket.Connected)
+                        return false;
+                    else
+                        return true;
+                }
+                else return false;
             }
-            else return false;
+            else
+            {
+                if (webSocket != null)
+                {
+                    if (webSocket.ReadyState != WebSocketState.Open)
+                        return false;
+                    else
+                        return true;
+                }
+                else return false;
+            }
         }
     }   
 }

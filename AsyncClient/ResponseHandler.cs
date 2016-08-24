@@ -1,8 +1,11 @@
-﻿using System.Text;
-using LunkerLibrary.common.protocol;
-using System.Runtime.InteropServices;
-using static AsyncClient.CommonHelper;
+﻿
 using System;
+using System.Text;
+using System.Runtime.InteropServices;
+using LunkerLibrary.common.protocol;
+using AsyncChat;
+using static AsyncChat.CommonHelper;
+
 
 namespace AsyncClient
 {
@@ -16,14 +19,44 @@ namespace AsyncClient
             this.client = client;
         }
 
+        public bool IsHeader(byte[] data)
+        {
+            int dataSize = data.Length;
+            CommonHeader headerStruct = BytesToStruct<CommonHeader>(data);
+            bool isCorrect;
+            
+            switch (headerStruct.State)
+            {
+                case MessageState.Request:
+                case MessageState.Response:
+                case MessageState.Success:
+                case MessageState.Fail:
+                case MessageState.Error:
+                    isCorrect = true;
+                    break;
+                default:
+                    isCorrect = false;
+                    break;
+            }
+            if (dataSize == Marshal.SizeOf(typeof(CommonHeader)) && isCorrect)
+            {
+                return true;
+            }
+            else return false;
+        }
+
         public void HandleResponse(byte[] data)
         {
-            if (data.Length == Marshal.SizeOf(typeof(CommonHeader)) && client.doesBodyExist == false)
+            if (data.Length < Marshal.SizeOf(typeof(CommonHeader)))
             {
 
+            }
+
+            if (IsHeader(data) && client.doesBodyExist == false)
+            {
                 client.responseHeader = BytesToStruct<CommonHeader>(data);
-                
-                client.SendDisplay(client.DebugHeader(client.responseHeader), ChatType.Receive);
+                client.DebugDisplay("[Received] " + client.DebugHeader(client.responseHeader));
+
                 if (client.responseHeader.BodyLength == 0)
                 {
                     client.doesBodyExist = false;
@@ -46,7 +79,6 @@ namespace AsyncClient
                             // Move to Room State
                             case MessageType.JoinRoom:
                                 ResponseState();
-
                                 client.runType = RunType.Room;
                                 client.runState = RunState.Idle;
                                 break;
@@ -62,6 +94,7 @@ namespace AsyncClient
                             // Disconnect from Chat server... Move to Login State
                             case MessageType.Logout:
                                 ResponseState();
+                                client.BackToLoginServer();
                                 client.runState = RunState.Idle;
                                 break;
 
@@ -83,6 +116,7 @@ namespace AsyncClient
                 {
                     client.doesBodyExist = false;
                     client.SendDisplay("Invalid BodyLength", ChatType.System);
+                    client.runState = RunState.Idle;
                 }
             }
             else if (client.doesBodyExist == true)
@@ -102,8 +136,6 @@ namespace AsyncClient
                         // Signin Body (ServerInfo, Cookie)
                         case MessageType.Signin:
                             Signin(data);
-                            //client.runType = RunType.Lobby;
-                            //client.runState = RunState.Idle;
                             break;
 
                         // ListRoom Body (ChattingRoom[])
@@ -154,14 +186,13 @@ namespace AsyncClient
         private void ResponseState()
         {
             client.SendDisplay(string.Format("{0} {1}", client.responseHeader.Type.ToString(), client.responseHeader.State.ToString()), ChatType.System);
-            //client.runState = RunState.Idle;
         }
 
         private void Signin(byte[] data)
         {
             CLSigninResponseBody signinBody = BytesToStruct<CLSigninResponseBody>(data);
             client.serverInfo = signinBody.ServerInfo;
-            //client.SendDisplay(string.Format("{0}:{1}", signinBody.ServerInfo.GetPureIp(), signinBody.ServerInfo.Port), ChatType.Debug);
+            client.DebugDisplay(string.Format("{0}:{1}", signinBody.ServerInfo.GetPureIp(), signinBody.ServerInfo.Port));
             client.userInfo = client.responseHeader.UserInfo;
             client.cookie = client.responseHeader.Cookie;
             client.ConnectionPassing();
@@ -183,7 +214,7 @@ namespace AsyncClient
             CCJoinResponseBody joinBody = BytesToStruct<CCJoinResponseBody>(data);
             client.serverInfo = joinBody.ServerInfo;
             client.ConnectionPassing();
-            client.Join(client.room.RoomNo);
+            client.JoinRequest(client.room.RoomNo);
         }
 
         private void Create(byte[] data)
