@@ -17,7 +17,7 @@ namespace AsyncChat
         Debug
     }
 
-    enum ServerType
+    enum ConnectionType
     {
         Login,
         Chat

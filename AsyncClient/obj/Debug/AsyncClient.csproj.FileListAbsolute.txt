@@ -13,3 +13,4 @@ C:\Users\taekong\Documents\GitHub\AsyncChatClient\AsyncClient\bin\Debug\AsyncCli
 C:\Users\taekong\Documents\GitHub\AsyncChatClient\AsyncClient\bin\Debug\websocket-sharp.dll
 C:\Users\taekong\Documents\GitHub\AsyncChatClient\AsyncClient\bin\Debug\websocket-sharp.xml
 C:\Users\taekong\Documents\GitHub\AsyncChatClient\AsyncClient\obj\Debug\AsyncClient.csprojResolveAssemblyReference.cache
+C:\Users\taekong\Documents\GitHub\AsyncChatClient\AsyncClient\bin\Debug\LunkerProtocol.dll

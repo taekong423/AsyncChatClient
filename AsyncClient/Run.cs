@@ -12,8 +12,11 @@ namespace AsyncClient
     {
         Client client;
         string command = null;
-        int waitTime = 200;
+        int waitTime = 200; //milliseconds
+        int timeOutCount = 0;
+        int timeOut = 45; //seconds
         int roomNo;
+        
 
         public Run()
         {
@@ -46,17 +49,34 @@ namespace AsyncClient
             }
         }
 
+        public void Waiting()
+        {
+            if (!client.debug)
+            {
+                timeOutCount++;
+                if (((timeOutCount*waitTime)/1000) >= timeOut)
+                {
+                    client.SendDisplay("Response TimeOut...", ChatType.System);
+                    client.SendDisplay("Press Any Key...", ChatType.System);
+                    Console.ReadKey();
+                    client.ClearDisplay();
+                    client.InitializeClient();
+                }
+            }
+        }
+
         private void Start()
         {
             if (client.runState == RunState.Idle)
             {
+                timeOutCount = 0;
                 client.runState = RunState.Waiting;
 
                 ServerInfo info = GetEndPoint();
                 string address = info.GetPureIp();
                 int port = info.Port;
 
-                client.Connect(address, port, ServerType.Login);
+                client.Connect(address, port, ConnectionType.Login);
                 client.ClearDisplay();
                 client.SendDisplay(string.Format("Connecting to Login Server [ {0} : {1} ]", address, port), ChatType.System);
             }
@@ -79,9 +99,11 @@ namespace AsyncClient
                 {
                     case RunState.Waiting:
                         Thread.Sleep(waitTime);
+                        Waiting();
                         break;
 
                     case RunState.Idle:
+                        timeOutCount = 0;
                         lock (client.display)
                         {
                             client.SendDisplay("┌-----------------------------------------┐", ChatType.Console);
@@ -107,6 +129,7 @@ namespace AsyncClient
 
 
                     case RunState.Signup:
+                        timeOutCount = 0;
                         client.runState = RunState.Waiting;
                         client.SendDisplay("┌-----------------------------------------┐", ChatType.Console);
                         client.SendDisplay("│               < Sign Up >               │", ChatType.Console);
@@ -118,6 +141,7 @@ namespace AsyncClient
 
 
                     case RunState.Signin:
+                        timeOutCount = 0;
                         client.runState = RunState.Waiting;
                         client.SendDisplay("┌-----------------------------------------┐", ChatType.Console);
                         client.SendDisplay("│               < Sign In >               │", ChatType.Console);
@@ -130,6 +154,7 @@ namespace AsyncClient
 
 
                     case RunState.Modify:
+                        timeOutCount = 0;
                         client.runState = RunState.Waiting;
                         client.SendDisplay("┌-----------------------------------------┐", ChatType.Console);
                         client.SendDisplay("│         < Modify User Password >        │", ChatType.Console);
@@ -147,6 +172,7 @@ namespace AsyncClient
 
 
                     case RunState.Delete:
+                        timeOutCount = 0;
                         client.SendDisplay("┌-----------------------------------------┐", ChatType.Console);
                         client.SendDisplay("│             < Delete User >             │", ChatType.Console);
                         client.SendDisplay("└-----------------------------------------┘", ChatType.Console);
@@ -159,12 +185,14 @@ namespace AsyncClient
 
 
                     default:
+                        timeOutCount = 0;
                         Console.WriteLine("Invalid Login RunState");
                         break;
                 }
             }
             else
             {
+                timeOutCount = 0;
                 client.SendDisplay("Login Server Disconnected", ChatType.System);
                 client.InitializeClient();
             }
@@ -179,10 +207,12 @@ namespace AsyncClient
                 {
                     case RunState.Waiting:
                         Thread.Sleep(waitTime);
+                        Waiting();
                         break;
 
 
                     case RunState.Idle:
+                        timeOutCount = 0;
                         lock (client.display)
                         {
                             client.SendDisplay("┌-----------------------------------------┐", ChatType.Console);
@@ -203,18 +233,21 @@ namespace AsyncClient
 
 
                     case RunState.List:
+                        timeOutCount = 0;
                         client.runState = RunState.Waiting;
                         client.ListRequest();
                         break;
 
 
                     case RunState.Create:
+                        timeOutCount = 0;
                         client.runState = RunState.Waiting;
                         client.CreateRequest();
                         break;
 
 
                     case RunState.Join:
+                        timeOutCount = 0;
                         client.runState = RunState.Waiting;
                         client.SendDisplay("┌-----------------------------------------┐", ChatType.Console);
                         client.SendDisplay("│            Enter Room Number            │", ChatType.Console);
@@ -230,32 +263,25 @@ namespace AsyncClient
 
 
                     case RunState.Logout:
+                        timeOutCount = 0;
                         client.runState = RunState.Waiting;
-                        client.ChangeCurrentSocket(ServerType.Login);
+                        client.ChangeCurrentSocket(client.loginSocket);
                         client.LogoutRequest();
                         break;
 
 
                     default:
+                        timeOutCount = 0;
                         Console.WriteLine("Invalid Lobby RunState");
                         break;
                 }
             }
             else
             {
-                if (client.IsLoginConnected())
-                {
-                    client.ClearDisplay();
-                    client.SendDisplay("Chat Server Disconnected", ChatType.System);
-                    client.InitializeClient();
-                    //client.BackToLoginServer();
-                }
-                else
-                {
-                    client.ClearDisplay();
-                    client.SendDisplay("Login Server Disconnected", ChatType.System);
-                    client.InitializeClient();
-                }
+                timeOutCount = 0;
+                client.ClearDisplay();
+                client.SendDisplay("Login Server Disconnected", ChatType.System);
+                client.InitializeClient();
             }
         }
 
@@ -267,9 +293,11 @@ namespace AsyncClient
                 {
                     case RunState.Waiting:
                         Thread.Sleep(waitTime);
+                        Waiting();
                         break;
 
                     case RunState.Idle:
+                        timeOutCount = 0;
                         client.runState = RunState.Waiting;
                         client.ClearDisplay();
                         lock (client.display)
@@ -283,25 +311,17 @@ namespace AsyncClient
                         break;
 
                     default:
+                        timeOutCount = 0;
                         Console.WriteLine("Invalid Room RunState");
                         break;
                 }
             }
             else
             {
-                if (client.IsLoginConnected())
-                {
-                    client.ClearDisplay();
-                    client.SendDisplay("Chat Server Disconnected", ChatType.System);
-                    client.InitializeClient();
-                    //client.BackToLoginServer();
-                }
-                else
-                {
-                    client.ClearDisplay();
-                    client.SendDisplay("Login Server Disconnected", ChatType.System);
-                    client.InitializeClient();
-                }
+                timeOutCount = 0;
+                client.ClearDisplay();
+                client.SendDisplay("Login Server Disconnected", ChatType.System);
+                client.InitializeClient();
             }
         }
 

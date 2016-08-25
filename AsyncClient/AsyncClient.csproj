@@ -34,7 +34,7 @@
   <ItemGroup>
     <Reference Include="LunkerProtocol, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\LunkerProtocol.dll</HintPath>
+      <HintPath>..\..\..\Visual Studio 2015\LunkerProtocol.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />

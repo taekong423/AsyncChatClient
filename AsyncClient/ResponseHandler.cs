@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Text;
 using System.Runtime.InteropServices;
 using LunkerLibrary.common.protocol;
@@ -19,39 +18,8 @@ namespace AsyncClient
             this.client = client;
         }
 
-        public bool IsHeader(byte[] data)
-        {
-            int dataSize = data.Length;
-            CommonHeader headerStruct = BytesToStruct<CommonHeader>(data);
-            bool isCorrect;
-            
-            switch (headerStruct.State)
-            {
-                case MessageState.Request:
-                case MessageState.Response:
-                case MessageState.Success:
-                case MessageState.Fail:
-                case MessageState.Error:
-                    isCorrect = true;
-                    break;
-                default:
-                    isCorrect = false;
-                    break;
-            }
-            if (dataSize == Marshal.SizeOf(typeof(CommonHeader)) && isCorrect)
-            {
-                return true;
-            }
-            else return false;
-        }
-
         public void HandleResponse(byte[] data)
         {
-            if (data.Length < Marshal.SizeOf(typeof(CommonHeader)))
-            {
-
-            }
-
             if (IsHeader(data) && client.doesBodyExist == false)
             {
                 client.responseHeader = BytesToStruct<CommonHeader>(data);
@@ -64,16 +32,23 @@ namespace AsyncClient
                     {
                         switch (client.responseHeader.Type)
                         {
-                            // HeartBeat
-                            case MessageType.Heartbeat:
-
-                                break;
-
                             // Move to Lobby State when ConnectionSetup Success Received
                             case MessageType.ConnectionSetup:
                                 ResponseState();
-                                client.runType = RunType.Lobby;
-                                client.runState = RunState.Idle;
+                                if (client.isPassing)
+                                {
+                                    client.isPassing = false;
+                                    client.JoinRequest(client.room.RoomNo);
+                                }
+                                else
+                                {
+                                    client.runType = RunType.Lobby;
+                                    client.runState = RunState.Idle;
+                                }
+                                break;
+
+                            case MessageType.ConnectionPassing:
+                                ConnectionPassing();
                                 break;
 
                             // Move to Room State
@@ -95,6 +70,7 @@ namespace AsyncClient
                             case MessageType.Logout:
                                 ResponseState();
                                 client.BackToLoginServer();
+                                client.InitializeLogin();
                                 client.runState = RunState.Idle;
                                 break;
 
@@ -183,9 +159,40 @@ namespace AsyncClient
             }
         }
 
+        public bool IsHeader(byte[] data)
+        {
+            int dataSize = data.Length;
+            CommonHeader headerStruct = BytesToStruct<CommonHeader>(data);
+            bool isCorrect;
+
+            switch (headerStruct.State)
+            {
+                case MessageState.Request:
+                case MessageState.Response:
+                case MessageState.Success:
+                case MessageState.Fail:
+                case MessageState.Error:
+                    isCorrect = true;
+                    break;
+                default:
+                    isCorrect = false;
+                    break;
+            }
+            if (dataSize == Marshal.SizeOf(typeof(CommonHeader)) && isCorrect)
+            {
+                return true;
+            }
+            else return false;
+        }
+
         private void ResponseState()
         {
             client.SendDisplay(string.Format("{0} {1}", client.responseHeader.Type.ToString(), client.responseHeader.State.ToString()), ChatType.System);
+        }
+
+        private void ConnectionPassing()
+        {
+            client.ConnectChatServer();
         }
 
         private void Signin(byte[] data)
@@ -195,7 +202,7 @@ namespace AsyncClient
             client.DebugDisplay(string.Format("{0}:{1}", signinBody.ServerInfo.GetPureIp(), signinBody.ServerInfo.Port));
             client.userInfo = client.responseHeader.UserInfo;
             client.cookie = client.responseHeader.Cookie;
-            client.ConnectionPassing();
+            client.ConnectChatServer();
         }
 
         private void List(byte[] data)
@@ -213,8 +220,8 @@ namespace AsyncClient
         {
             CCJoinResponseBody joinBody = BytesToStruct<CCJoinResponseBody>(data);
             client.serverInfo = joinBody.ServerInfo;
+
             client.ConnectionPassing();
-            client.JoinRequest(client.room.RoomNo);
         }
 
         private void Create(byte[] data)
