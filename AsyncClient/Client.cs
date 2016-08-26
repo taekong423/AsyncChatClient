@@ -435,7 +435,7 @@ namespace AsyncClient
         public void ConnectionPassing()
         {
             isPassing = true;
-            ChangeCurrentSocket(loginSocket);
+            ChangeCurrentSocket();
             CommonHeader header = new CommonHeader(MessageType.ConnectionPassing, MessageState.Request, 0, cookie, userInfo);
             CLConnectionPassingRequestBody passingReqBody = new CLConnectionPassingRequestBody(serverInfo);
             SendStructAsPacket(header, passingReqBody);
@@ -606,20 +606,22 @@ namespace AsyncClient
         }
 
         // Change the socket that is currently networking (receiveing, sending data)
-        public void ChangeCurrentSocket(Socket newSocket)
+        public void ChangeCurrentSocket()
         {
             currentSocket = null;
 
-            if (newSocket != null)
+            if (loginSocket != null)
             {
-                if (newSocket.Connected)
-                    currentSocket = newSocket;
+                if (loginSocket.Connected)
+                    currentSocket = loginSocket;
                 else
                 {
                     InitializeClient();
                 }
             }
             else InitializeClient();
+
+            isWebSocket = false;
         }
 
         // Change back to Login state

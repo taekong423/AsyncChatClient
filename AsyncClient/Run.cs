@@ -265,7 +265,7 @@ namespace AsyncClient
                     case RunState.Logout:
                         timeOutCount = 0;
                         client.runState = RunState.Waiting;
-                        client.ChangeCurrentSocket(client.loginSocket);
+                        client.ChangeCurrentSocket();
                         client.LogoutRequest();
                         break;
 

@@ -8,6 +8,7 @@ namespace AsyncClient
     {
         static void Main(string[] args)
         {
+            Console.SetWindowSize(75, 30);
             Run run = new Run();
         }
     }
